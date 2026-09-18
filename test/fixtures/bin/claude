@@ -1,17 +1,61 @@
 #!/bin/sh
-# Fake Claude Code CLI. The auth payload deliberately includes the PII fields the
-# real one returns, so tests can prove we never surface them.
+# Fake Claude Code CLI reproducing real 2.1.274 behaviour:
+#   - `auth status --json` returns a payload that also carries email/org
+#   - `-p --output-format stream-json` emits hook noise, then a `result` event
+# FAKE_MODE: success (default) | quota | auth | malformed | noresult | hang
 case "$1" in
-  --version) echo "9.9.9 (Claude Code)" ;;
+  --version) echo "9.9.9 (Claude Code)"; exit 0 ;;
   auth)
     if [ "$2" = "status" ]; then
-      if [ -n "$FAKE_LOGGED_OUT" ]; then
-        echo '{"loggedIn":false}'
-        exit 0
-      fi
+      if [ -n "$FAKE_LOGGED_OUT" ]; then echo '{"loggedIn":false}'; exit 0; fi
       echo '{"loggedIn":true,"authMethod":"claude.ai","email":"secret@example.com","orgId":"org_SECRET","orgName":"Secret Org"}'
       exit 0
     fi
+    exit 0
     ;;
-  *) echo "fake claude: $*" ;;
+esac
+
+SESSION=""
+RESUMED=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --session-id) SESSION="$2"; shift ;;
+    --resume) RESUMED="$2"; SESSION="$2"; shift ;;
+  esac
+  shift
+done
+[ -z "$SESSION" ] && SESSION="00000000-0000-4000-8000-000000000000"
+PROMPT="$(cat)"
+
+# Real runs start with hook chatter before anything useful.
+echo "{\"type\":\"system\",\"subtype\":\"hook_started\",\"hook_name\":\"SessionStart:startup\",\"session_id\":\"$SESSION\"}"
+echo "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"$SESSION\"}"
+
+case "${FAKE_MODE:-success}" in
+  hang) while true; do sleep 0.2; done ;;
+  quota)
+    echo "{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"result\":\"Usage limit reached for your plan\",\"session_id\":\"$SESSION\"}"
+    exit 1
+    ;;
+  auth)
+    echo "{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"result\":\"Authentication required. Please run claude auth login\",\"session_id\":\"$SESSION\"}"
+    exit 1
+    ;;
+  malformed)
+    echo 'not json at all'
+    echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"streamed fallback\"}]},\"session_id\":\"$SESSION\"}"
+    echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"\",\"session_id\":\"$SESSION\",\"num_turns\":1}"
+    exit 0
+    ;;
+  noresult)
+    echo "{\"type\":\"system\",\"subtype\":\"post_turn_summary\",\"session_id\":\"$SESSION\"}"
+    exit 0
+    ;;
+  *)
+    echo "{\"type\":\"system\",\"subtype\":\"thinking_tokens\",\"session_id\":\"$SESSION\"}"
+    echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\"}]},\"session_id\":\"$SESSION\"}"
+    echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"partial\"}]},\"session_id\":\"$SESSION\"}"
+    echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Answer for: $PROMPT\",\"session_id\":\"$SESSION\",\"num_turns\":1,\"duration_ms\":1234,\"total_cost_usd\":0.01,\"permission_denials\":[]}"
+    exit 0
+    ;;
 esac

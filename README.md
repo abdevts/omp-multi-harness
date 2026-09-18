@@ -24,10 +24,11 @@ agent.**
     login            login
 ```
 
-> **Status — Phase 1 of 6.** Working today: `/agents`, `/agents auth`, `/harness-setup`,
-> config loading, executable + auth detection, and the process runner underneath.
-> Delegation itself (`ask_codex`, `ask_claude`, `/codex`, `/claude`, `/sessions`) lands in
-> Phases 2–4. Progress: [`_plan/PROGRESS.md`](_plan/PROGRESS.md).
+> **Status — Phases 0–3 of 6.** Delegation works: `ask_codex`, `ask_claude`, `/codex`,
+> `/claude`, plus `/agents`, `/agents auth`, `/harness-setup`. Claude delegation is verified
+> end-to-end against the real CLI; Codex passes its fake-CLI suite but could not be verified
+> live because that account is out of credits. Parallel runs and `/sessions` land in Phase 4.
+> Progress: [`_plan/PROGRESS.md`](_plan/PROGRESS.md).
 
 ---
 
@@ -141,6 +142,8 @@ Every option: [`_spec/09-config.md`](_spec/09-config.md).
 
 ## Usage
 
+Flags for `/codex` and `/claude`: `--read-only`, `--new`, `--mode <mode>`, `--model <id>`.
+
 ### Commands
 
 | command | status | what it does |
@@ -148,16 +151,16 @@ Every option: [`_spec/09-config.md`](_spec/09-config.md).
 | `/agents` | ✅ | Availability, version, auth, and readiness for both agents |
 | `/agents auth [codex\|claude]` | ✅ | Auth status plus the exact login command |
 | `/harness-setup` | ✅ | The setup checklist, inside a session |
-| `/codex <task>` | Phase 2 | Delegate straight to Codex |
-| `/claude <task>` | Phase 3 | Delegate straight to Claude Code |
+| `/codex <task>` | ✅ | Delegate straight to Codex |
+| `/claude <task>` | ✅ | Delegate straight to Claude Code |
 | `/sessions` | Phase 4 | List, watch, switch between, and cancel running delegations |
 
 ### Tools the supervisor calls on its own
 
 | tool | status | typical use |
 |---|---|---|
-| `ask_codex` | Phase 2 | implementation, debugging, refactors, tests |
-| `ask_claude` | Phase 3 | architecture, planning, design review, second opinions |
+| `ask_codex` | ✅ | implementation, debugging, refactors, tests |
+| `ask_claude` | ✅ | architecture, planning, design review, second opinions |
 | `delegate` | Phase 5 | `agent: "auto"` routing |
 | `agent_runs` | Phase 5 | fan several runs out, then join them |
 
@@ -181,6 +184,7 @@ Three independent choices:
 | `/agents` says *not authenticated* for Claude | `claude auth login` |
 | `auto` always picks by rules | OMP has no authenticated model — `omp` → `/login`, or set `routing.model` |
 | `unavailable — \`codex\` not found on PATH` | install it, or set `multiHarness.codex.executable` to the full path |
+| `PROVIDER_LIMIT: … out of credits` | the provider account, not the task — top up or switch accounts. Retrying will not help. |
 | doctor shows *repo-local copy shadowing your global omp* | harmless: `bun run` puts `node_modules/.bin` first, and the dev dependency ships an `omp` |
 | Extension not loading | confirm the symlink target, or run `omp -e ./src/index.ts` directly |
 
@@ -207,7 +211,8 @@ Details: [`_spec/10-errors-and-security.md`](_spec/10-errors-and-security.md).
 
 ```bash
 bun install
-bun test           # 61 tests, no live provider calls
+bun test           # 110 tests, no live provider calls
+MULTI_HARNESS_LIVE_TESTS=1 bun test test/live.test.ts   # opt-in, calls the real CLIs
 bun run typecheck
 bun run dev        # omp --no-extensions -e ./src/index.ts
 bun run doctor

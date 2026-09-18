@@ -7,6 +7,7 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { clearAvailabilityCache } from "./agents/availability.ts";
+import { ClaudeAgent } from "./agents/claude.ts";
 import { CodexAgent } from "./agents/codex.ts";
 import { registerAgentsCommand } from "./commands/agents.ts";
 import { registerDelegateCommand } from "./commands/delegate-command.ts";
@@ -27,10 +28,13 @@ export default function multiHarness(pi: ExtensionAPI) {
 	registerAgentsCommand(pi, getConfig);
 	registerHarnessSetupCommand(pi, getConfig, getSources);
 
-	// Codex (Phase 2). Claude follows the same shape in Phase 3.
 	const createCodex = (config: MultiHarnessConfig) => new CodexAgent(config.codex);
 	registerAskAgentTool({ pi, agent: "codex", getConfig, createAgent: createCodex });
 	registerDelegateCommand({ pi, agent: "codex", getConfig, createAgent: createCodex });
+
+	const createClaude = (config: MultiHarnessConfig) => new ClaudeAgent(config.claude);
+	registerAskAgentTool({ pi, agent: "claude", getConfig, createAgent: createClaude });
+	registerDelegateCommand({ pi, agent: "claude", getConfig, createAgent: createClaude });
 
 	pi.on("session_start", async (_event: unknown, ctx: ExtensionContext) => {
 		loaded = loadConfig(ctx.cwd);

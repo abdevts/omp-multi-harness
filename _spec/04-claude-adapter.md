@@ -53,6 +53,36 @@ Note: `plan` mode means Claude will produce a plan rather than edit. For a read-
 *review* this is the desired behavior; the mode preamble (02) tells it to report findings
 rather than propose a plan for approval.
 
+### Event shapes captured from Claude Code 2.1.274 (2026-09-18)
+
+A real run of `claude -p --output-format stream-json --verbose` produced, in order:
+
+```text
+ 4 × {"type":"system","subtype":"hook_started", …,"session_id":"<ours>"}
+ 4 × {"type":"system","subtype":"hook_response", …}
+ 1 × {"type":"system","subtype":"init","session_id":"<ours>"}
+ 6 × {"type":"system","subtype":"thinking_tokens"}
+ 2 × {"type":"assistant", …}
+ 1 × {"type":"rate_limit_event", …}
+ 1 × {"type":"system","subtype":"post_turn_summary"}
+ 1 × {"type":"result","subtype":"success","is_error":false,"result":"pong",
+      "session_id":"<ours>","num_turns":1,"duration_ms":8243,
+      "total_cost_usd":0.43,"usage":{…},"permission_denials":[…]}
+```
+
+Consequences:
+
+- The supplied `--session-id` **is echoed back** on every event, confirming the
+  caller-generated UUID approach.
+- Most of a run is hook chatter. Progress reporting ignores every `system` subtype except
+  `init`, or the status line becomes unreadable noise.
+- `result.result` is the final answer; `is_error` plus a non-`success` subtype marks
+  failure. A success result can still carry an **empty** string, so the fallback to the last
+  streamed assistant text must test for emptiness, not just `undefined`.
+- `permission_denials` is worth keeping: a non-empty list is direct evidence about what a
+  read-only run was actually prevented from doing.
+- `total_cost_usd` is reported per run and is surfaced in `metadata`.
+
 ## Output parsing
 
 `stream-json` emits one JSON object per line:

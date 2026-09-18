@@ -3,11 +3,13 @@
 Single source of truth for task status. Update in the same change that does the work.
 
 **Legend:** `todo` · `wip` · `done` · `blocked`
-**Last updated:** 2026-09-18 — **Phases 0–2 complete.** Config, process runner,
+**Last updated:** 2026-09-18 — **Phases 0–3 complete.** Config, process runner,
 executable + auth detection, `/agents`, `/agents auth`, `/harness-setup`, and 61 passing
-tests. Consumer setup documented in the README. Codex delegation works end-to-end against a fake
-CLI (90 tests); **real-CLI verification is blocked: the Codex account is out of credits.**
-Next: Phase 3 (Claude adapter).
+tests. Consumer setup documented in the README. **Claude delegation verified live against the real
+CLI** (read a file in a scratch repo, returned the right answer, real session id, read-only
+enforced). Codex is verified against fakes only — its live run fails because the Codex
+account is out of credits, which the adapter correctly reports as `PROVIDER_LIMIT`.
+110 tests. Next: Phase 4 (parallel runs + `/sessions`).
 
 ## Summary
 
@@ -16,11 +18,11 @@ Next: Phase 3 (Claude adapter).
 | 0 — Bootstrap | 8 | 8 | **done** |
 | 1 — Skeleton | 10 | 10 | **done** |
 | 2 — Codex | 7 | 7 | **done** |
-| 3 — Claude | 6 | 0 | todo |
+| 3 — Claude | 6 | 6 | **done** |
 | 4 — Parallel + `/sessions` | 9 | 0 | todo |
 | 5 — Supervisor | 7 | 0 | todo |
 | 6 — Hardening | 8 | 0 | todo |
-| **Total** | **55** | **25** | |
+| **Total** | **55** | **31** | |
 
 ## Phase 0 — Bootstrap
 
@@ -66,12 +68,12 @@ Next: Phase 3 (Claude adapter).
 
 | id | task | status | notes |
 |---|---|---|---|
-| T-301 | `agents/claude.ts` `buildArgs` + capability table | todo | spec 04 |
-| T-302 | Generated `--session-id` UUID + echo verification | todo | spec 04 |
-| T-303 | stream-json parser (system/assistant/result events) | todo | spec 04 |
-| T-304 | `tools/ask-claude.ts` | todo | spec 06 |
-| T-305 | `commands/claude.ts` (`/claude`) | todo | spec 07 |
-| T-306 | Fake `claude` fixture + adapter tests | todo | spec 11 |
+| T-301 | `agents/claude.ts` `buildArgs` + capability table | done | Q-001 answered: `--verbose` IS required with stream-json under `-p` |
+| T-302 | Generated `--session-id` UUID + echo verification | done | confirmed echoed on every event |
+| T-303 | `agents/claude-events.ts` stream-json parser | done | built from real captured output |
+| T-304 | `ask_claude` via the shared tool factory | done | spec 06 |
+| T-305 | `/claude` via the shared delegate command | done | spec 07 |
+| T-306 | Fake `claude` fixture + adapter tests + live test | done | `MULTI_HARNESS_LIVE_TESTS=1` — **live run passed** |
 
 ## Phase 4 — Parallel runs + `/sessions`
 
@@ -130,4 +132,11 @@ Next: Phase 3 (Claude adapter).
 
 | A | B | C | D | E | F | G | H | I | J | K | L | M | N |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| ☑ | ☑ | ~ | ☑ | ☐ | ☑ | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ~ | ☐ |
+
+- **A** extension loads in `omp 18.2.6`; **B** `/agents` reports both correctly.
+- **C** `/codex` is implemented and passes fake-CLI tests, but cannot be verified live until
+  the Codex account has credits — marked `~`, not done.
+- **D** `/claude` verified live end-to-end.
+- **F/G/H** enforced and unit-tested; **M** partially: process-group kill is proven, the
+  session-shutdown drain lands with the run registry in Phase 4.

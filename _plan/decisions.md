@@ -20,6 +20,12 @@
 
 ## Resolved
 
+- **Q-001 — does Claude 2.1.x need `--verbose` with `stream-json` under `-p`?** Yes; encoded
+  in the capability table. Verified live 2026-09-18.
+- **Q-002 — Codex JSONL event names.** Captured from a real run: `thread.started`
+  (`thread_id`), `turn.started`, `item.completed` (`item.type`), `turn.completed`,
+  `turn.failed`. The candidate-key search stays, for version tolerance.
+
 - **Q-004 — should `/sessions` also list OMP's own sessions?** No. Delegated runs only;
   OMP's `/resume` already covers session browsing, switching, and Claude/Codex import.
   Resolved by the user 2026-09-18 → D-011.
@@ -28,8 +34,6 @@
 
 | id | question | blocks | default if unanswered |
 |---|---|---|---|
-| Q-001 | Does Claude Code 2.1.x still require `--verbose` alongside `--output-format stream-json` under `-p`? | T-301 | Pass `--verbose`; drop it if the capability probe shows it is unnecessary. |
-| Q-002 | Exact Codex 0.155 JSONL event names for session id and completion | T-203 | Candidate-key search across a key list, version-tolerant by design. |
 | Q-003 | Does OMP expose an official extension-scoped storage API? | T-407 | Plain JSON files under the runtime-resolved agent dir. (Config turned out to have no API either — D-015.) |
 | Q-005 | Install target: symlink into `~/.omp/agent/extensions/`, project-local `.omp/extensions/`, or an npm/git package via `omp install`? | T-607 | Symlink for dev (the doctor offers it); document `omp install` for later distribution. |
 | Q-006 | Should the router model ever be allowed to pick *both* agents (fan-out) rather than one? | T-506 | No — `auto` returns exactly one agent. Fan-out stays an explicit supervisor decision via two background calls. |
