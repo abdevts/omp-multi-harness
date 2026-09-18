@@ -35,7 +35,11 @@ The directory is currently not a git repo. Initialize, add a `.gitignore`
 Record in `_spec/01` the versions this was built against and a note to re-verify:
 `omp 18.2.6` · `codex-cli 0.155.0` · `claude 2.1.274`.
 
-### T-006 — Setup doctor (`scripts/setup.ts`)
+### T-006 — Setup doctor (`scripts/setup.ts` + `scripts/setup/*`)
+**One module per provider**, orchestrated by `setup.ts`: `toolchain.ts`, `omp.ts`,
+`codex.ts`, `claude.ts` — mirroring the `src/agents/` layout so a third worker is one file
+plus one registration line. Supports `--json` and `--only <group,…>`.
+
 Covers all 14 setup steps from spec 14: Bun, git, deps, OMP, agent dir, **OMP provider
 auth**, Codex + **Codex auth**, Claude + **Claude auth**, router model, extension link,
 `multiHarness` config block, editor config.

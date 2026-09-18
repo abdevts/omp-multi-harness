@@ -29,7 +29,7 @@ setup added per user direction (D-012/D-013/D-014).
 | T-003 | Dev loop: `omp --no-extensions -e ./src/index.ts` | done | verified |
 | T-004 | `git init` + first commit | done | |
 | T-005 | Pin verified CLI versions in `_spec/01` | done | omp 18.2.6 · codex 0.155.0 · claude 2.1.274 · bun 1.4.0 |
-| T-006 | `scripts/setup.ts` doctor — 14 steps incl. all three auths | done | `bun run doctor` |
+| T-006 | Setup doctor, one module per provider (`scripts/setup/{toolchain,omp,codex,claude}.ts`) orchestrated by `setup.ts` — 14 steps incl. all three auths | done | `bun run doctor`; `--json`, `--only` |
 | T-007 | Editor config: `.vscode/{settings,extensions,launch,tasks}.json` + `.editorconfig` | done | |
 | T-008 | Prove the factory body executes, not just exit 0 | done | probe via `omp models ls -e <file>` |
 

@@ -1,8 +1,35 @@
 # 14 — Setup, Toolchain, Install, Auth
 
-Every step needed to go from a bare machine to a working supervisor. Implemented by
-`scripts/setup.ts` (`bun run doctor` / `bun run setup fix`) and surfaced inside OMP by
+Every step needed to go from a bare machine to a working supervisor. Surfaced inside OMP by
 `/harness-setup`.
+
+## Layout — one module per provider
+
+Setup mirrors the adapter layout: each provider owns its own checks, and the orchestrator
+just runs them all. Adding a third worker later means adding one file and one line.
+
+```text
+scripts/
+├── setup.ts              # orchestrator: runs every registered group, renders, applies fixes
+└── setup/
+    ├── types.ts          # Status / Fix / Step / SetupGroup + sh(), which(), agentDir()
+    ├── toolchain.ts      # Bun, git, dependencies, editor config
+    ├── omp.ts            # OMP CLI, agent dir, OMP's own auth, router model, link, config block
+    ├── codex.ts          # Codex CLI + auth          (mirrors src/agents/codex.ts)
+    └── claude.ts         # Claude Code CLI + auth    (mirrors src/agents/claude.ts)
+```
+
+```bash
+bun run doctor                          # check everything, read-only
+bun scripts/setup.ts fix                # apply safe fixes, prompting for each
+bun scripts/setup.ts fix --yes          # ...without prompting
+bun scripts/setup.ts check --json       # machine-readable
+bun scripts/setup.ts check --only codex,claude   # one or more groups
+```
+
+Each group is a `SetupGroup { id, title, steps: Step[] }`; each `Step.run()` returns
+`{ status, detail, fix? }`. A `fix` with an `auto()` is safe to run unattended; one without
+is printed for the user. Provider modules never import each other.
 
 ## Principles
 
