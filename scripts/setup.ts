@@ -128,7 +128,13 @@ const steps: Step[] = [
 					fix: { description: "Install OMP", command: "bun add -g @oh-my-pi/pi-coding-agent", interactive: true },
 				};
 			}
-			return { status: "ok", detail: `${sh("omp", ["--version"]).out} (${p})` };
+			// `bun run` prepends node_modules/.bin, so a devDependency copy can shadow the
+			// user's global omp. Both are the host, but say which one we measured.
+			const local = p.startsWith(join(REPO, "node_modules"));
+			return {
+				status: "ok",
+				detail: `${sh("omp", ["--version"]).out} (${p})${local ? " — repo-local copy shadowing your global omp" : ""}`,
+			};
 		},
 	},
 	{
