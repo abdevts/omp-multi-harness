@@ -1,0 +1,17 @@
+#!/bin/sh
+# Fake Codex CLI. Mirrors the real one's quirks — notably that `login status`
+# writes to STDERR, not stdout.
+case "$1" in
+  --version) echo "codex-cli 9.9.9" ;;
+  login)
+    if [ "$2" = "status" ]; then
+      if [ -n "$FAKE_LOGGED_OUT" ]; then
+        echo "Not logged in" >&2
+        exit 1
+      fi
+      echo "Logged in using ChatGPT" >&2
+      exit 0
+    fi
+    ;;
+  *) echo "fake codex: $*" ;;
+esac

@@ -3,22 +3,22 @@
 Single source of truth for task status. Update in the same change that does the work.
 
 **Legend:** `todo` · `wip` · `done` · `blocked`
-**Last updated:** 2026-09-18 — Phase 0 complete (scaffolding, setup doctor, editor config,
-extension skeleton verified loading in `omp 18.2.6`). Q-004 → D-011. Router model + auth
-setup added per user direction (D-012/D-013/D-014).
+**Last updated:** 2026-09-18 — **Phases 0 and 1 complete.** Config, process runner,
+executable + auth detection, `/agents`, `/agents auth`, `/harness-setup`, and 61 passing
+tests. Consumer setup documented in the README. Next: Phase 2 (Codex adapter).
 
 ## Summary
 
 | Phase | Tasks | Done | Status |
 |---|---|---|---|
 | 0 — Bootstrap | 8 | 8 | **done** |
-| 1 — Skeleton | 10 | 0 | todo |
+| 1 — Skeleton | 10 | 10 | **done** |
 | 2 — Codex | 7 | 0 | todo |
 | 3 — Claude | 6 | 0 | todo |
 | 4 — Parallel + `/sessions` | 9 | 0 | todo |
 | 5 — Supervisor | 7 | 0 | todo |
 | 6 — Hardening | 8 | 0 | todo |
-| **Total** | **55** | **8** | |
+| **Total** | **55** | **18** | |
 
 ## Phase 0 — Bootstrap
 
@@ -37,16 +37,16 @@ setup added per user direction (D-012/D-013/D-014).
 
 | id | task | status | notes |
 |---|---|---|---|
-| T-101 | `src/index.ts` ExtensionAPI factory (registration-only load phase) | todo | spec 00, 01§2 |
-| T-102 | `config/schema.ts` + `config/load.ts` with defaults & validation (incl. routing + model keys) | todo | spec 09 |
-| T-103 | `process/executable.ts` — PATH resolution, no shell | todo | spec 03/04 |
-| T-104 | `process/spawn-agent.ts` — full runner | todo | spec 05 |
-| T-105 | `process/process-error.ts` — typed errors + messages | todo | spec 10 |
-| T-106 | Capability detection with per-process cache | todo | spec 03/04 |
-| T-107 | `/agents` command (executable + version + auth per agent) | todo | spec 07; skeleton already in `src/index.ts` |
-| T-108 | Unit tests: runner, executable, config, errors | todo | spec 11 |
-| T-109 | `/harness-setup` — setup checklist inside OMP (+ `fix`) | todo | spec 14, 07 |
-| T-110 | `/agents auth <codex\|claude>` — status + exact login command | todo | spec 14, 07; never performs login |
+| T-101 | `src/index.ts` ExtensionAPI factory (registration-only load phase) | done | factory execution verified in `omp`, not just exit 0 |
+| T-102 | `config/schema.ts` + `config/load.ts` — defaults, validation, user+project merge | done | reads YAML via `Bun.YAML`; OMP exposes no config API (D-015) |
+| T-103 | `process/executable.ts` — PATH resolution, no shell | done | no `which` subprocess; PATHEXT handled |
+| T-104 | `process/spawn-agent.ts` — full runner | done | process-group kill proven by a grandchild test |
+| T-105 | `process/process-error.ts` — typed errors + messages | done | 10 codes,every message names its fix |
+| T-106 | Capability detection with per-process cache | done | auth via each CLI's own status command only |
+| T-107 | `/agents` command (executable + version + auth per agent) | done | + `getArgumentCompletions` |
+| T-108 | Unit tests: runner, executable, config, errors, availability | done | 61 tests, no live provider calls |
+| T-109 | `/harness-setup` — setup checklist inside OMP | done | `fix` actions deferred to the doctor script |
+| T-110 | `/agents auth <codex\|claude>` — status + exact login command | done | never performs a login |
 
 ## Phase 2 — Codex
 
@@ -107,7 +107,7 @@ setup added per user direction (D-012/D-013/D-014).
 | T-604 | Malformed/partial output resilience | todo | spec 03/04 |
 | T-605 | Redaction test suite (no prompts/tokens/env in logs) | todo | spec 10 |
 | T-606 | Full fake-CLI suite green; opt-in live suite documented | todo | spec 11 |
-| T-607 | `README.md` — install, config, usage, troubleshooting | todo | spec 00 |
+| T-607 | `README.md` — install, config, usage, troubleshooting | done (v1) | consumer setup written in Phase 1; revisit when tools land |
 | T-608 | Acceptance walkthrough A–N recorded in this file | todo | spec 12 |
 
 ## Environment state (from `bun run doctor`, 2026-09-18)

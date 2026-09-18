@@ -1,0 +1,17 @@
+#!/bin/sh
+# Fake Claude Code CLI. The auth payload deliberately includes the PII fields the
+# real one returns, so tests can prove we never surface them.
+case "$1" in
+  --version) echo "9.9.9 (Claude Code)" ;;
+  auth)
+    if [ "$2" = "status" ]; then
+      if [ -n "$FAKE_LOGGED_OUT" ]; then
+        echo '{"loggedIn":false}'
+        exit 0
+      fi
+      echo '{"loggedIn":true,"authMethod":"claude.ai","email":"secret@example.com","orgId":"org_SECRET","orgName":"Secret Org"}'
+      exit 0
+    fi
+    ;;
+  *) echo "fake claude: $*" ;;
+esac
