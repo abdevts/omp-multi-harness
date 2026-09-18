@@ -38,6 +38,43 @@ On a resume failure (unknown/garbage-collected id) → surface `SESSION_RESUME_F
 then automatically retry once as a **fresh session with the handoff context prepended**,
 and set `metadata.resumedFallback = true`.
 
+## Fork capability (corrected, 2026-09-18)
+
+An earlier version of this spec, and a comment in `src/agents/codex.ts`, stated that Codex
+has no fork equivalent and that a forked request therefore has to start a fresh session.
+That premise was **wrong** — verified live against the installed `codex-cli 0.155.0`:
+
+```
+$ codex exec --help
+...
+Commands:
+  resume  Resume a previous session by id or pick the most recent with --last
+  fork    Fork a previous session by id into a new session
+...
+
+$ codex exec fork --help
+Fork a previous session by id into a new session
+
+Usage: codex exec fork [OPTIONS] <SESSION_ID> [PROMPT]
+
+Arguments:
+  <SESSION_ID>  Conversation/session id (UUID) or thread name to fork
+  [PROMPT]      Optional prompt to send after forking. If `-` is used, read from stdin
+```
+
+`codex exec fork <SESSION_ID> [PROMPT]` exists, takes the session/thread id (not a file
+path — a UUID or thread name, same shape as `resume`'s argument), and accepts the prompt on
+stdin via `-`, matching how this adapter already passes prompts. **However**, `codex exec
+fork`'s own option list has no `-C/--cd` and no `-s/--sandbox` — both flags this adapter
+sets on every invocation (cwd correctness, and the OS-enforced read-only sandbox that
+`codexReadOnlyEnforcement` reports honestly). Whether a forked run inherits its cwd and
+sandbox mode from the original session (which would actually suit our same-cwd,
+parallel-writer use case) or requires something else entirely is not established by
+`--help` alone. Do not adopt `exec fork` on the strength of this finding — see decision
+D-016 for the recorded follow-up. The current behavior (fresh session, no `resume`/`fork`
+subcommand, `metadata.forked` reported honestly) remains safe and correct; it is simply not
+optimal, since it drops the forked session's prior context that a real fork would keep.
+
 ## Read-only mapping
 
 | requested | flag | `readOnlyEnforced` |

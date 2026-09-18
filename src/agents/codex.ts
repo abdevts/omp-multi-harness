@@ -28,11 +28,18 @@ export interface CodexCapabilities {
 	supportsJson: boolean;
 	supportsOutputLastMessage: boolean;
 	supportsResumeSubcommand: boolean;
+	/**
+	 * Whether this codex build honors `-s <mode>` at all. Verified present on 0.155.0
+	 * (`codex exec --help` lists `-s, --sandbox <SANDBOX_MODE>`). Kept as a capability
+	 * (rather than assumed) so an adapter talking to a codex build that dropped or renamed
+	 * the flag can still report `readOnlyEnforced: false` truthfully instead of guessing.
+	 */
+	supportsSandboxMode: boolean;
 }
 
 /** Unknown or newer versions get the newest known capability set. */
 export function codexCapabilities(_version: string | undefined): CodexCapabilities {
-	return { supportsJson: true, supportsOutputLastMessage: true, supportsResumeSubcommand: true };
+	return { supportsJson: true, supportsOutputLastMessage: true, supportsResumeSubcommand: true, supportsSandboxMode: true };
 }
 
 export interface BuildCodexArgsInput {
@@ -44,6 +51,12 @@ export interface BuildCodexArgsInput {
 	/** True when cwd is not inside a git repository. */
 	skipGitRepoCheck?: boolean;
 	readOnly: boolean;
+	/**
+	 * Branch instead of continuing a resumed session. Codex has no `--fork-session`
+	 * equivalent (verified via `codex exec --help`), so a forked run simply omits the
+	 * `resume <id>` subcommand and starts fresh — see `AgentRequest.fork` in types.ts.
+	 */
+	fork?: boolean;
 }
 
 /**
@@ -51,16 +64,16 @@ export interface BuildCodexArgsInput {
  * task text out of `ps` and clear of argv limits.
  */
 export function buildCodexArgs(input: BuildCodexArgsInput): string[] {
-	const { request, config, capabilities, lastMessageFile, skipGitRepoCheck, readOnly } = input;
+	const { request, config, capabilities, lastMessageFile, skipGitRepoCheck, readOnly, fork } = input;
 	const args: string[] = ["exec"];
 
-	if (request.sessionId && capabilities.supportsResumeSubcommand) {
+	if (request.sessionId && capabilities.supportsResumeSubcommand && !fork) {
 		args.push("resume", request.sessionId);
 	}
 
 	if (capabilities.supportsJson) args.push("--json");
 	args.push("-C", request.cwd);
-	args.push("-s", readOnly ? "read-only" : "workspace-write");
+	if (capabilities.supportsSandboxMode) args.push("-s", readOnly ? "read-only" : "workspace-write");
 
 	if (lastMessageFile && capabilities.supportsOutputLastMessage) args.push("-o", lastMessageFile);
 	if (skipGitRepoCheck) args.push("--skip-git-repo-check");
@@ -73,6 +86,21 @@ export function buildCodexArgs(input: BuildCodexArgsInput): string[] {
 	// `-` = read the prompt from stdin. Always last.
 	args.push("-");
 	return args;
+}
+
+/**
+ * Honest read-only enforcement (T-602): derived from the argv we actually built, never
+ * from what was merely requested. `-s read-only` is an OS-enforced sandbox (seatbelt on
+ * macOS, landlock on Linux) — real isolation, not a request the model can ignore — so it
+ * is safe to report `true` when, and only when, that exact flag pair is present. If
+ * `capabilities.supportsSandboxMode` is false the flag was never emitted and this
+ * correctly reports `false`: we never claim isolation we could not prove.
+ */
+export function codexReadOnlyEnforcement(args: string[], readOnly: boolean): { enforced: boolean; mechanism?: string } {
+	if (!readOnly) return { enforced: false };
+	const idx = args.indexOf("-s");
+	const enforced = idx !== -1 && args[idx + 1] === "read-only";
+	return enforced ? { enforced: true, mechanism: "-s read-only" } : { enforced: false };
 }
 
 function isGitRepo(cwd: string): boolean {
@@ -120,6 +148,7 @@ export class CodexAgent implements ExternalAgent {
 			lastMessageFile,
 			skipGitRepoCheck: !isGitRepo(request.cwd),
 			readOnly,
+			fork: request.fork,
 		});
 
 		const state = newCodexStreamState();
@@ -176,6 +205,8 @@ export class CodexAgent implements ExternalAgent {
 				);
 			}
 
+			const enforcement = codexReadOnlyEnforcement(args, readOnly);
+
 			return {
 				agent: "codex",
 				success: true,
@@ -184,11 +215,15 @@ export class CodexAgent implements ExternalAgent {
 				exitCode: result.exitCode,
 				durationMs: Date.now() - started,
 				metadata: {
-					readOnlyEnforced: readOnly,
+					readOnlyEnforced: enforcement.enforced,
+					readOnlyMechanism: enforcement.mechanism,
 					cliVersion: availability.version,
 					items: state.itemCount,
 					parseErrors: reader.stats.parseErrors,
 					model: request.model ?? this.config.model ?? null,
+					// Codex has no `--fork-session`; a forked request omits `resume` and starts a
+					// fresh session instead (see buildCodexArgs / types.ts), reported honestly here.
+					forked: Boolean(request.fork),
 				},
 			};
 		} catch (e) {

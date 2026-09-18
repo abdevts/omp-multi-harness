@@ -3,13 +3,38 @@
 Single source of truth for task status. Update in the same change that does the work.
 
 **Legend:** `todo` · `wip` · `done` · `blocked`
-**Last updated:** 2026-09-18 — **Phases 0–3 complete.** Config, process runner,
-executable + auth detection, `/agents`, `/agents auth`, `/harness-setup`, and 61 passing
-tests. Consumer setup documented in the README. **Claude delegation verified live against the real
-CLI** (read a file in a scratch repo, returned the right answer, real session id, read-only
-enforced). Codex is verified against fakes only — its live run fails because the Codex
-account is out of credits, which the adapter correctly reports as `PROVIDER_LIMIT`.
-110 tests. Next: Phase 4 (parallel runs + `/sessions`).
+**Last updated:** 2026-09-18 — **Phases 0–5 complete; Phase 6 complete except the live
+checks.** Parallel runs, `/sessions`, session continuation, background (`--bg`) delegation,
+`auto` routing, `delegate` + `agent_runs`, plus hardening: workspace write lock, honest
+read-only reporting, cancellation/drain coverage, malformed-output resilience, and
+redaction. **378 tests pass, 2 skipped (the gated live suite), 0 fail; typecheck clean.**
+Extension load verified against real `omp` with a throwing-canary control.
+
+Three real bugs were found and fixed by the hardening pass, none of which the prior suite
+caught: `ClaudeAgent.run()` never forwarded `fork` to `buildClaudeArgs` (so `--fork-session`
+could never be emitted); a stray late terminal event could discard an already-successful
+answer in both event parsers; and every `AgentError` factory embedded raw CLI stderr into
+user-visible messages with **no redaction**, so a credential a worker echoed back could
+reach an error message or log.
+
+**Packaging (2026-09-18):** publishable as `omp-multi-harness@0.1.0` — MIT `LICENSE` added,
+`files`/`exports`/`repository` set, `prepublishOnly` gates on typecheck + tests, and a
+`omp-multi-harness` bin with `link`/`unlink`/`status`/`doctor` (npm install alone does not
+register an extension — OMP does not scan `node_modules`). Extension auto-discovery from
+`<agentDir>/extensions/` verified with a throwing canary. **Not published** — `npm publish`
+is deliberately left to a human.
+
+Two defects found while packaging: `src/sessions/store.ts` contained a literal **NUL byte**
+(a hash separator) that made the file binary to grep/ripgrep — replaced with `\0`, hash
+proven byte-identical; and `resolveAgentDir()` consulted OMP's resolver before
+`PI_CODING_AGENT_DIR`, but upstream `getAgentDir()` memoizes that env var at module load,
+so a runtime change could never be honored. The env var is now checked first — production
+behavior is unchanged (env preset still wins, profiles still defer to OMP), and the
+documented contract is now actually true.
+
+Still unproven: Codex against the real binary (account out of credits → `PROVIDER_LIMIT`),
+and model-based `auto` routing (OMP has no authenticated model here, so it falls back to
+rules). See [`acceptance-walkthrough.md`](acceptance-walkthrough.md).
 
 ## Summary
 
@@ -19,10 +44,10 @@ account is out of credits, which the adapter correctly reports as `PROVIDER_LIMI
 | 1 — Skeleton | 10 | 10 | **done** |
 | 2 — Codex | 7 | 7 | **done** |
 | 3 — Claude | 6 | 6 | **done** |
-| 4 — Parallel + `/sessions` | 9 | 0 | todo |
-| 5 — Supervisor | 7 | 0 | todo |
-| 6 — Hardening | 8 | 0 | todo |
-| **Total** | **55** | **31** | |
+| 4 — Parallel + `/sessions` | 9 | 9 | **done** |
+| 5 — Supervisor | 7 | 7 | **done** |
+| 6 — Hardening | 8 | 8 | **done** |
+| **Total** | **55** | **55** | |
 
 ## Phase 0 — Bootstrap
 
@@ -79,40 +104,40 @@ account is out of credits, which the adapter correctly reports as `PROVIDER_LIMI
 
 | id | task | status | notes |
 |---|---|---|---|
-| T-401 | `runs/types.ts` + `runs/registry.ts` | todo | spec 08 |
-| T-402 | Ring buffer for live output | todo | spec 08 |
-| T-403 | Progress plumbing → `ctx.setInterval` UI ticks (never raw timers) | todo | spec 01§2, 08 |
-| T-404 | `background: true` on `ask_*` | todo | spec 06 |
-| T-405 | `commands/sessions.ts` — `/sessions` interactive + text fallback (delegated runs only, D-011) | todo | spec 07 |
-| T-406 | Focus/attach/detach, widget + status line | todo | spec 08 |
-| T-407 | `sessions/store.ts` — OMP↔worker mapping, 0600 files, profile-aware agent dir | todo | spec 08 |
-| T-408 | Resume + fallback handoff (`routing/handoff.ts`) | todo | spec 02, 08 |
-| T-409 | `session_shutdown` drain: cancel + await every run | todo | spec 08 |
+| T-401 | `runs/types.ts` + `runs/registry.ts` | done | short ids, queueing, idempotent cancel, bounded drain |
+| T-402 | Ring buffer for live output | done | byte-capped, line-aware, UTF-8 safe; `droppedBytes` surfaced |
+| T-403 | Progress plumbing → `ctx.setInterval` UI ticks (never raw timers) | done | `ctx.setInterval` only; a throwing progress path fails just its own run |
+| T-404 | `background: true` on `ask_*` | done | returns `{runId, status}`; completion notifies + `pi.appendEntry` |
+| T-405 | `commands/sessions.ts` — `/sessions` interactive + text fallback (delegated runs only, D-011) | done | delegated runs only (D-011); interactive + text fallback |
+| T-406 | Focus/attach/detach, widget + status line | done | focus is presentation only — never pauses or reorders a run |
+| T-407 | `sessions/store.ts` — OMP↔worker mapping, 0600 files, profile-aware agent dir | done | 0600/0700, profile-aware agent dir, ids+paths+timestamps only |
+| T-408 | Resume + fallback handoff (`routing/handoff.ts`) | done | one fallback, `resumedFallback`; fork (Claude) / fresh (Codex) |
+| T-409 | `session_shutdown` drain: cancel + await every run | done | drains on shutdown *and* on a fresh `session_start` |
 
 ## Phase 5 — Supervisor guidance
 
 | id | task | status | notes |
 |---|---|---|---|
-| T-501 | `tools/delegate.ts` with rule-based `auto` (no extra LLM call) | todo | spec 06 |
-| T-502 | `tools/agent-runs.ts` (list/status/result/cancel/wait) | todo | spec 06 |
-| T-503 | `routing/prompt.ts` — `promptSnippet` + `promptGuidelines` naming each tool | todo | spec 06 |
-| T-504 | Availability-aware fallback when the preferred agent is missing | todo | spec 06 |
-| T-505 | Routing behavior checks (plan→claude, implement→codex, no rigid workflow) | todo | spec 12-E |
-| T-506 | Router model for `auto` (`routing.mode: model`, default `@smol`, rules fallback) | todo | spec 09 §Router model; D-013 |
-| T-507 | Worker model overrides: per-call `model` > `<agent>.model` > CLI config | todo | spec 09 §Model selection |
+| T-501 | `tools/delegate.ts` with rule-based `auto` (no extra LLM call) | done | rule-based `auto`; no extra LLM call on the rules path |
+| T-502 | `tools/agent-runs.ts` (list/status/result/cancel/wait) | done | list/status/result/cancel/wait over the registry |
+| T-503 | `routing/prompt.ts` — `promptSnippet` + `promptGuidelines` naming each tool | done | via `before_agent_start` + tool descriptions — no invented API |
+| T-504 | Availability-aware fallback when the preferred agent is missing | done | unavailable agent falls back; neither available → typed refusal |
+| T-505 | Routing behavior checks (plan→claude, implement→codex, no rigid workflow) | done | 30-item corpus; asserts **no** rigid plan→implement workflow |
+| T-506 | Router model for `auto` (`routing.mode: model`, default `@smol`, rules fallback) | done | every router failure falls back to rules, silently |
+| T-507 | Worker model overrides: per-call `model` > `<agent>.model` > CLI config | done | one `resolveWorkerModel`; callers must not re-derive it |
 
 ## Phase 6 — Hardening
 
 | id | task | status | notes |
 |---|---|---|---|
-| T-601 | `runs/lock.ts` workspace write lock (FIFO, release in finally) | todo | spec 08 |
-| T-602 | Read-only enforcement + honest `readOnlyEnforced` reporting | todo | spec 02, 10 |
-| T-603 | Cancellation cleanup incl. process-group kill | todo | spec 05 |
-| T-604 | Malformed/partial output resilience | todo | spec 03/04 |
-| T-605 | Redaction test suite (no prompts/tokens/env in logs) | todo | spec 10 |
-| T-606 | Full fake-CLI suite green; opt-in live suite documented | todo | spec 11 |
+| T-601 | `runs/lock.ts` workspace write lock (FIFO, release in finally) | done | FIFO, realpath-keyed, release-in-`finally`, abort-safe |
+| T-602 | Read-only enforcement + honest `readOnlyEnforced` reporting | done | **enforcement derived from built argv**, never from the request |
+| T-603 | Cancellation cleanup incl. process-group kill | done | no bug found — coverage only: SIGKILL ladder, 3-gen reap, listener hygiene |
+| T-604 | Malformed/partial output resilience | done | 1 MiB line cap; streaming UTF-8 decode; terminal-event `settled` guard |
+| T-605 | Redaction test suite (no prompts/tokens/env in logs) | done | **found a real leak** in every `AgentError` factory; allowlist env view |
+| T-606 | Full fake-CLI suite green; opt-in live suite documented | done | no ungated live CLI call; live suite documented with its blockers |
 | T-607 | `README.md` — install, config, usage, troubleshooting | done (v1) | consumer setup written in Phase 1; revisit when tools land |
-| T-608 | Acceptance walkthrough A–N recorded in this file | todo | spec 12 |
+| T-608 | Acceptance walkthrough A–N recorded in this file | done | recorded in `acceptance-walkthrough.md`, with evidence per criterion |
 
 ## Environment state (from `bun run doctor`, 2026-09-18)
 
@@ -132,7 +157,7 @@ account is out of credits, which the adapter correctly reports as `PROVIDER_LIMI
 
 | A | B | C | D | E | F | G | H | I | J | K | L | M | N |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| ☑ | ☑ | ~ | ☑ | ☐ | ☑ | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ~ | ☐ |
+| ☑ | ~ | ☐ | ~ | ~ | ☑ | ☑ | ☑ | ☑ | ~ | ~ | ☑ | ☑ | ☑ |
 
 - **A** extension loads in `omp 18.2.6`; **B** `/agents` reports both correctly.
 - **C** `/codex` is implemented and passes fake-CLI tests, but cannot be verified live until

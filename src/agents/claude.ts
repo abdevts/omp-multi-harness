@@ -86,6 +86,8 @@ export function buildClaudeArgs(input: BuildClaudeArgsInput): string[] {
 	} else if (!readOnly && config.acceptEdits && capabilities.supportsPermissionMode) {
 		args.push("--permission-mode", "acceptEdits");
 	}
+	// else: readOnly was requested but this capability set cannot enforce it — no flag is
+	// emitted, and claudeReadOnlyEnforcement() below will honestly report `false` for it.
 
 	const model = request.model ?? config.model;
 	if (model) args.push("--model", model);
@@ -93,6 +95,23 @@ export function buildClaudeArgs(input: BuildClaudeArgsInput): string[] {
 	for (const dir of config.additionalDirs) args.push("--add-dir", dir);
 
 	return args;
+}
+
+/**
+ * Honest read-only enforcement (T-602): derived from the argv we actually built, never
+ * from what was merely requested. `--permission-mode plan` plus a read-only `--tools`
+ * allowlist is real enforcement — Claude cannot invoke a tool outside the allowlist,
+ * confirmed via `claude --help` (both flags exist exactly as spelled here on 2.1.277). If
+ * `capabilities.supportsPermissionMode` was false, neither flag was emitted and this
+ * correctly reports `false`.
+ */
+export function claudeReadOnlyEnforcement(args: string[], readOnly: boolean): { enforced: boolean; mechanism?: string } {
+	if (!readOnly) return { enforced: false };
+	const modeIdx = args.indexOf("--permission-mode");
+	const hasPlanMode = modeIdx !== -1 && args[modeIdx + 1] === "plan";
+	const hasToolsAllowlist = args.includes("--tools");
+	const enforced = hasPlanMode && hasToolsAllowlist;
+	return enforced ? { enforced: true, mechanism: `--permission-mode plan --tools ${READ_ONLY_TOOLS.join(",")}` } : { enforced: false };
 }
 
 export class ClaudeAgent implements ExternalAgent {
@@ -122,7 +141,7 @@ export class ClaudeAgent implements ExternalAgent {
 		const timeoutMs = request.timeoutMs ?? this.config.timeoutMs;
 		const sessionId = randomUUID();
 
-		const args = buildClaudeArgs({ request, config: this.config, capabilities, readOnly, sessionId });
+		const args = buildClaudeArgs({ request, config: this.config, capabilities, readOnly, sessionId, fork: request.fork });
 
 		const state = newClaudeStreamState();
 		const reader = new JsonlReader((value) => {
@@ -175,6 +194,7 @@ export class ClaudeAgent implements ExternalAgent {
 
 			// The CLI is the authority on its own session id; ours was only a request.
 			const effectiveSessionId = state.sessionId ?? sessionId;
+			const enforcement = claudeReadOnlyEnforcement(args, readOnly);
 
 			return {
 				agent: "claude",
@@ -184,7 +204,8 @@ export class ClaudeAgent implements ExternalAgent {
 				exitCode: result.exitCode,
 				durationMs: Date.now() - started,
 				metadata: {
-					readOnlyEnforced: readOnly && capabilities.supportsPermissionMode,
+					readOnlyEnforced: enforcement.enforced,
+					readOnlyMechanism: enforcement.mechanism,
 					cliVersion: availability.version,
 					turns: state.turns,
 					costUsd: state.costUsd,
@@ -192,6 +213,9 @@ export class ClaudeAgent implements ExternalAgent {
 					parseErrors: reader.stats.parseErrors,
 					model: request.model ?? this.config.model ?? null,
 					sessionIdMismatch: state.sessionId !== undefined && state.sessionId !== sessionId && !request.sessionId,
+					// `--fork-session` only applies when resuming; report the request honestly
+					// either way (see buildClaudeArgs / types.ts AgentRequest.fork).
+					forked: Boolean(request.fork),
 				},
 			};
 		} catch (e) {

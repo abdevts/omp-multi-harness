@@ -24,6 +24,12 @@ export interface ClaudeStreamState {
 	/** Tools Claude asked for and was refused — evidence that read-only actually held. */
 	permissionDenials: number;
 	sawResult: boolean;
+	/**
+	 * Set once the first `result` event has decided success/failure. A real run emits
+	 * exactly one; a duplicate or out-of-order repeat must not flip an already-decided
+	 * outcome (see the matching note on CodexStreamState.settled).
+	 */
+	settled: boolean;
 }
 
 export interface ClaudeProgressEvent {
@@ -63,7 +69,7 @@ function toolName(event: Record<string, unknown>): string | undefined {
 }
 
 export function newClaudeStreamState(): ClaudeStreamState {
-	return { permissionDenials: 0, sawResult: false };
+	return { permissionDenials: 0, sawResult: false, settled: false };
 }
 
 export function applyClaudeEvent(state: ClaudeStreamState, value: unknown): ClaudeProgressEvent | null {
@@ -93,6 +99,7 @@ export function applyClaudeEvent(state: ClaudeStreamState, value: unknown): Clau
 
 	if (type === "result") {
 		state.sawResult = true;
+		// Informational fields are harmless to keep refreshing even from a stray repeat.
 		if (typeof event.num_turns === "number") state.turns = event.num_turns;
 		if (typeof event.total_cost_usd === "number") state.costUsd = event.total_cost_usd;
 		if (Array.isArray(event.permission_denials)) state.permissionDenials = event.permission_denials.length;
@@ -100,13 +107,18 @@ export function applyClaudeEvent(state: ClaudeStreamState, value: unknown): Clau
 		const isError = event.is_error === true || (subtype !== "" && subtype !== "success");
 		const text = typeof event.result === "string" ? event.result : undefined;
 
-		if (isError) {
-			state.failure = text && text.length > 0 ? text : `the run ended with "${subtype || "an error"}"`;
-			return { phase: "failed", detail: state.failure, raw: `result:${subtype}` };
+		if (!state.settled) {
+			state.settled = true;
+			if (isError) {
+				state.failure = text && text.length > 0 ? text : `the run ended with "${subtype || "an error"}"`;
+			} else {
+				state.result = text;
+			}
 		}
 
-		state.result = text;
-		return { phase: "completed", raw: `result:${subtype}` };
+		return isError
+			? { phase: "failed", detail: text || state.failure, raw: `result:${subtype}` }
+			: { phase: "completed", raw: `result:${subtype}` };
 	}
 
 	return null;

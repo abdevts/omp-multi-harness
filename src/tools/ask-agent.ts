@@ -3,10 +3,12 @@
  * they are built from one factory (_spec/06-tools.md).
  */
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
-import { MODE_DEFAULT_READ_ONLY, type AgentMode, type AgentName, type ExternalAgent } from "../agents/types.ts";
+import { MODE_DEFAULT_READ_ONLY, type AgentMode, type AgentName } from "../agents/types.ts";
 import type { MultiHarnessConfig } from "../config/schema.ts";
+import type { RunRegistry, RunView } from "../runs/types.ts";
 import { AgentError, agentDisabled } from "../process/process-error.ts";
-import { buildHandoff, renderResult } from "../routing/handoff.ts";
+import { buildHandoff, summarize, truncateMiddle } from "../routing/handoff.ts";
+import { resolveWorkerModel } from "../routing/route.ts";
 
 const MODES = ["analyze", "plan", "implement", "debug", "review", "test"] as const;
 
@@ -32,16 +34,18 @@ interface AskAgentParams {
 	readOnly?: boolean;
 	continueSession?: boolean;
 	model?: string;
+	background?: boolean;
 }
 
 export interface AskAgentDeps {
 	pi: ExtensionAPI;
 	agent: AgentName;
 	getConfig: () => MultiHarnessConfig;
-	createAgent: (config: MultiHarnessConfig) => ExternalAgent;
+	/** Taken as a getter so this module never imports the registry implementation. */
+	getRegistry: () => RunRegistry;
 }
 
-export function registerAskAgentTool({ pi, agent, getConfig, createAgent }: AskAgentDeps): void {
+export function registerAskAgentTool({ pi, agent, getConfig, getRegistry }: AskAgentDeps): void {
 	const z = pi.zod;
 
 	pi.registerTool({
@@ -58,6 +62,10 @@ export function registerAskAgentTool({ pi, agent, getConfig, createAgent }: AskA
 			readOnly: z.boolean().optional().describe("Force read-only. Defaults from mode."),
 			continueSession: z.boolean().optional().describe("Reuse this session's worker session. Default true."),
 			model: z.string().optional().describe("Worker model override. Omit to use the CLI's own configuration."),
+			background: z
+				.boolean()
+				.optional()
+				.describe("Return a run id immediately instead of waiting. Check it with agent_runs or /sessions."),
 		}),
 		async execute(_toolCallId, rawParams, signal, _onUpdate, ctx: ExtensionContext) {
 			const params = rawParams as AskAgentParams;
@@ -79,29 +87,92 @@ export function registerAskAgentTool({ pi, agent, getConfig, createAgent }: AskA
 				maxChars: config.limits.maxHandoffChars,
 			});
 
-			try {
-				const result = await createAgent(config).run(
-					{ agent, task, cwd: ctx.cwd, mode, readOnly, model: params.model },
-					{
-						signal: signal ?? new AbortController().signal,
-						onProgress: (p) => ctx.ui.setStatus("multi-harness", `${agent}: ${p.phase}`),
-					},
-				);
+			// Both paths go through the registry, not straight to the adapter: that is what gives
+			// every call the workspace write lock, the concurrency cap, and a row in `/sessions`.
+			const registry = getRegistry();
+			const started = registry.start({
+				agent,
+				task,
+				summary: summarize(params.task),
+				cwd: ctx.cwd,
+				mode,
+				readOnly,
+				model: params.model,
+				continueSession: params.continueSession,
+				background: params.background === true,
+			});
 
-				const rendered = renderResult(result, config.limits.maxOutputChars);
+			// T-507 precedence lives in one place; this tool must not re-derive it.
+			const resolvedModel = resolveWorkerModel(params.model, agentConfig.model).model ?? null;
+
+			if (params.background === true) {
+				// Detached by design. `.catch` is mandatory — an unhandled rejection here would
+				// escape into the OMP session (_spec/01 §2).
+				registry
+					.wait(started.id)
+					.then((finished) => {
+						if (finished) deliverBackgroundResult({ pi, ctx, run: finished, config });
+					})
+					.catch((e) => pi.logger.warn?.(`[multi-harness] background run ${started.id}: ${(e as Error).message}`));
+
 				return {
-					content: [{ type: "text" as const, text: rendered.text }],
-					details: {
-						agent,
-						sessionId: result.sessionId,
-						exitCode: result.exitCode,
-						durationMs: result.durationMs,
-						readOnlyEnforced: readOnly,
-						truncated: rendered.truncated,
-						model: params.model ?? agentConfig.model ?? null,
-						routedBy: "explicit" as const,
-					},
+					content: [
+						{
+							type: "text" as const,
+							text:
+								`Started ${agent} run \`${started.id}\` in the background (${started.status}).\n` +
+								`Check it with \`agent_runs\` (action: "status" or "wait") or \`/sessions\`.`,
+						},
+					],
+					details: { agent, runId: started.id, status: started.status, background: true, model: resolvedModel },
 				};
+			}
+
+			try {
+				const abort = signal ?? new AbortController().signal;
+				const onAbort = () => void registry.cancel(started.id);
+				abort.addEventListener("abort", onAbort, { once: true });
+
+				const unsubscribe = registry.subscribe((run) => {
+					if (run.id === started.id) ctx.ui.setStatus("multi-harness", `${agent}: ${run.phase}`);
+				});
+
+				try {
+					const finished = await registry.wait(started.id);
+					if (!finished) {
+						return { content: [{ type: "text" as const, text: `Run ${started.id} disappeared from the registry.` }], isError: true };
+					}
+					if (finished.status !== "done") {
+						const detail = finished.errorMessage ?? `run ${finished.status}`;
+						return {
+							content: [{ type: "text" as const, text: `${finished.errorCode ?? finished.status.toUpperCase()}: ${detail}` }],
+							isError: true,
+							details: { agent, runId: finished.id, status: finished.status },
+						};
+					}
+
+					const { text, truncated } = truncateMiddle(finished.output ?? "", config.limits.maxOutputChars);
+					return {
+						content: [{ type: "text" as const, text }],
+						details: {
+							agent,
+							runId: finished.id,
+							sessionId: finished.workerSessionId,
+							durationMs: finished.elapsedMs,
+							// The adapter's claim, derived from the argv it actually built — not the
+							// caller's request. Absent metadata means the adapter could not prove it.
+							readOnlyRequested: readOnly,
+							readOnlyEnforced: finished.metadata?.readOnlyEnforced === true,
+							readOnlyMechanism: finished.metadata?.readOnlyMechanism ?? null,
+							truncated,
+							model: resolvedModel,
+							routedBy: "explicit" as const,
+						},
+					};
+				} finally {
+					unsubscribe();
+					abort.removeEventListener("abort", onAbort);
+				}
 			} catch (e) {
 				const message =
 					e instanceof AgentError
@@ -113,4 +184,47 @@ export function registerAskAgentTool({ pi, agent, getConfig, createAgent }: AskA
 			}
 		},
 	});
+}
+
+export interface BackgroundDeliveryDeps {
+	pi: ExtensionAPI;
+	ctx: ExtensionContext;
+	run: RunView;
+	config: MultiHarnessConfig;
+}
+
+/**
+ * Called when a `background: true` run reaches a terminal status. The supervisor is very
+ * likely mid-turn on something else by now, so how loudly this lands is a policy choice —
+ * see the TODO below.
+ */
+export function deliverBackgroundResult({ pi, ctx, run, config }: BackgroundDeliveryDeps): void {
+	// Always durable first: spec 08 requires a finished background run to survive a reload,
+	// and `appendEntry` is state-only (never sent to the LLM), so it is safe unconditionally.
+	pi.appendEntry("multi-harness-run", {
+		runId: run.id,
+		agent: run.agent,
+		status: run.status,
+		workerSessionId: run.workerSessionId,
+		summary: run.summary,
+		elapsedMs: run.elapsedMs,
+	});
+
+	// Deliberately a notification, not a `pi.sendUserMessage` injection. A background run
+	// finishes at an arbitrary moment — very likely while the supervisor is mid-turn on
+	// something unrelated — and injecting the worker's output there would derail that turn.
+	// The caller was handed a run id and told to poll, so `agent_runs` and `/sessions` are
+	// the retrieval path; this only has to make sure a finished run is never *missed*.
+	const label = `${run.agent} run ${run.id}`;
+	if (run.status === "done") {
+		const { text } = truncateMiddle(run.output ?? "", Math.min(240, config.limits.maxOutputChars));
+		const preview = text.replace(/\s+/g, " ").trim();
+		ctx.ui.notify(`${label} finished. ${preview || "(no output)"}`, "info");
+		return;
+	}
+
+	// A silent failure costs more than a silent success: the caller may still be waiting on
+	// work that will never arrive, so failures and cancellations always say why.
+	const reason = run.errorMessage ?? run.status;
+	ctx.ui.notify(`${label} ${run.status}: ${run.errorCode ? `${run.errorCode} — ` : ""}${reason}`, "error");
 }

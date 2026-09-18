@@ -20,6 +20,13 @@ export interface CodexStreamState {
 	failure?: string;
 	turnCompleted: boolean;
 	itemCount: number;
+	/**
+	 * Set once a terminal event (`turn.completed`, `turn.failed`, or top-level `error`) has
+	 * been recorded. A real stream carries at most one of these; a duplicate or out-of-order
+	 * repeat (garbled stream, buggy CLI) must not flip an already-decided outcome — losing a
+	 * real success to a stray late failure event would be worse than ignoring the duplicate.
+	 */
+	settled: boolean;
 }
 
 export interface CodexProgressEvent {
@@ -86,19 +93,30 @@ export function applyCodexEvent(state: CodexStreamState, value: unknown): CodexP
 	if (type === "turn.started") return { phase: "working", raw: type };
 
 	if (type === "turn.completed") {
-		state.turnCompleted = true;
+		if (!state.settled) {
+			state.turnCompleted = true;
+			state.settled = true;
+		}
 		return { phase: "completed", raw: type };
 	}
 
 	if (type === "turn.failed") {
 		const error = asRecord(event.error);
-		state.failure = (error ? firstString(error, ["message", "detail"]) : undefined) ?? "the turn failed";
-		return { phase: "failed", detail: state.failure, raw: type };
+		const message = (error ? firstString(error, ["message", "detail"]) : undefined) ?? "the turn failed";
+		if (!state.settled) {
+			state.failure = message;
+			state.settled = true;
+		}
+		return { phase: "failed", detail: state.failure ?? message, raw: type };
 	}
 
 	if (type === "error") {
-		state.failure ??= firstString(event, ["message", "detail"]) ?? "unknown error";
-		return { phase: "failed", detail: state.failure, raw: type };
+		const message = firstString(event, ["message", "detail"]) ?? "unknown error";
+		if (!state.settled) {
+			state.failure = message;
+			state.settled = true;
+		}
+		return { phase: "failed", detail: state.failure ?? message, raw: type };
 	}
 
 	if (type === "item.completed" || type === "item.started" || type === "item.updated") {
@@ -122,7 +140,7 @@ export function applyCodexEvent(state: CodexStreamState, value: unknown): CodexP
 }
 
 export function newCodexStreamState(): CodexStreamState {
-	return { turnCompleted: false, itemCount: 0 };
+	return { turnCompleted: false, itemCount: 0, settled: false };
 }
 
 /** Provider-side limits are worth their own message — refilling is the fix, not retrying. */

@@ -115,4 +115,8 @@ interface HarnessSession {
   emulate full history.
 - Parallel runs on the **same** agent in the **same** cwd cannot both resume the same
   worker session: the second one gets a fresh session (Codex) or `--fork-session`
-  (Claude), recorded in `metadata.forked = true`.
+  (Claude), recorded in `metadata.forked = true`. Codex *does* have a fork equivalent —
+  `codex exec fork <SESSION_ID> [PROMPT]`, verified live against codex-cli 0.155.0
+  (2026-09-18) — this project simply doesn't call it yet; see `_spec/03-codex-adapter.md`
+  §"Fork capability" and decision D-016 for why the current fresh-session fallback is kept
+  for now rather than adopting it outright.

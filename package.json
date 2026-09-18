@@ -1,24 +1,76 @@
 {
   "name": "omp-multi-harness",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
-  "description": "OMP extension that delegates work to the Codex and Claude Code CLIs",
+  "description": "OMP extension that delegates work to the Codex and Claude Code CLIs \u2014 parallel runs, /sessions, and automatic routing, using each CLI's own login",
   "license": "MIT",
+  "author": "Ahmad Bakhshi",
+  "homepage": "https://github.com/abdevts/omp-multi-harness#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abdevts/omp-multi-harness.git"
+  },
+  "bugs": {
+    "url": "https://github.com/abdevts/omp-multi-harness/issues"
+  },
+  "keywords": [
+    "omp",
+    "omp-extension",
+    "pi-coding-agent",
+    "codex",
+    "claude-code",
+    "ai",
+    "agent",
+    "cli",
+    "delegation"
+  ],
   "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
   "omp": {
-    "extensions": ["src/index.ts"]
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "bin": {
+    "omp-multi-harness": "scripts/cli.ts"
+  },
+  "files": [
+    "src",
+    "scripts/cli.ts",
+    "scripts/setup",
+    "scripts/setup.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.4.0"
   },
   "scripts": {
     "setup": "bun scripts/setup.ts",
     "doctor": "bun scripts/setup.ts check",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "dev": "omp --no-extensions -e ./src/index.ts"
+    "dev": "omp --no-extensions -e ./src/index.ts",
+    "link-extension": "bun scripts/cli.ts link",
+    "prepublishOnly": "bun run typecheck && bun test"
+  },
+  "peerDependencies": {
+    "@oh-my-pi/pi-coding-agent": ">=18.2.6"
+  },
+  "peerDependenciesMeta": {
+    "@oh-my-pi/pi-coding-agent": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@oh-my-pi/pi-coding-agent": "^18.2.6",
     "@types/bun": "^1.4.2",
     "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

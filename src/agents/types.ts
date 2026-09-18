@@ -10,6 +10,12 @@ export interface AgentRequest {
 	mode?: AgentMode;
 	/** Prior worker session id to resume. */
 	sessionId?: string;
+	/**
+	 * Fork the resumed session instead of continuing it, so two runs can share a parent
+	 * without racing on one worker session. Claude honors this via `--fork-session`; Codex
+	 * has no equivalent, so a forked Codex run starts fresh instead (_spec/08).
+	 */
+	fork?: boolean;
 	/** Compact handoff context — never the OMP transcript. */
 	context?: string;
 	timeoutMs?: number;
