@@ -3,9 +3,11 @@
 Single source of truth for task status. Update in the same change that does the work.
 
 **Legend:** `todo` · `wip` · `done` · `blocked`
-**Last updated:** 2026-09-18 — **Phases 0 and 1 complete.** Config, process runner,
+**Last updated:** 2026-09-18 — **Phases 0–2 complete.** Config, process runner,
 executable + auth detection, `/agents`, `/agents auth`, `/harness-setup`, and 61 passing
-tests. Consumer setup documented in the README. Next: Phase 2 (Codex adapter).
+tests. Consumer setup documented in the README. Codex delegation works end-to-end against a fake
+CLI (90 tests); **real-CLI verification is blocked: the Codex account is out of credits.**
+Next: Phase 3 (Claude adapter).
 
 ## Summary
 
@@ -13,12 +15,12 @@ tests. Consumer setup documented in the README. Next: Phase 2 (Codex adapter).
 |---|---|---|---|
 | 0 — Bootstrap | 8 | 8 | **done** |
 | 1 — Skeleton | 10 | 10 | **done** |
-| 2 — Codex | 7 | 0 | todo |
+| 2 — Codex | 7 | 7 | **done** |
 | 3 — Claude | 6 | 0 | todo |
 | 4 — Parallel + `/sessions` | 9 | 0 | todo |
 | 5 — Supervisor | 7 | 0 | todo |
 | 6 — Hardening | 8 | 0 | todo |
-| **Total** | **55** | **18** | |
+| **Total** | **55** | **25** | |
 
 ## Phase 0 — Bootstrap
 
@@ -52,13 +54,13 @@ tests. Consumer setup documented in the README. Next: Phase 2 (Codex adapter).
 
 | id | task | status | notes |
 |---|---|---|---|
-| T-201 | `agents/types.ts` (AgentRequest/Result/ExternalAgent) | todo | spec 02 |
-| T-202 | `agents/codex.ts` `buildArgs` + capability table | todo | spec 03 |
-| T-203 | Codex JSONL parser (session id, progress, final text) | todo | spec 03 |
-| T-204 | `-o` final-message temp file handling (0600, unlink in finally) | todo | spec 10 |
-| T-205 | `tools/ask-codex.ts` | todo | spec 06 |
-| T-206 | `commands/codex.ts` (`/codex`) | todo | spec 07 |
-| T-207 | Fake `codex` fixture + adapter tests | todo | spec 11 |
+| T-201 | `agents/types.ts` (AgentRequest/Result/ExternalAgent) | done | landed in Phase 1 |
+| T-202 | `agents/codex.ts` `buildArgs` + capability table | done | argv asserted exactly; prompt never in argv |
+| T-203 | Codex JSONL parser (`process/jsonl.ts` + `agents/codex-events.ts`) | done | built from **real captured events**, candidate-key search |
+| T-204 | `-o` final-message temp file handling | done | mkdtemp + `rmSync` in `finally` |
+| T-205 | `tools/ask-agent.ts` → `ask_codex` (shared factory, ready for Claude) | done | spec 06 |
+| T-206 | `commands/delegate-command.ts` → `/codex` | done | flag parser unit-tested |
+| T-207 | Fake `codex` fixture + adapter tests | done | fixture reproduces the real quirks |
 
 ## Phase 3 — Claude
 
@@ -119,6 +121,7 @@ tests. Consumer setup documented in the README. Next: Phase 2 (Codex adapter).
 | **OMP provider auth** | ✘ no authenticated models — user must run `omp` → `/login` |
 | Codex 0.155.0 + auth | ✔ logged in using ChatGPT |
 | Claude Code 2.1.274 + auth | ✔ logged in via claude.ai |
+| **Codex credits** | ✘ "Your workspace is out of credits" — `codex exec` fails; blocks real-CLI verification of Phase 2 |
 | Router model available | ! unverifiable until OMP is authenticated (falls back to rules) |
 | Extension linked into OMP | ! not linked — dev loop uses `-e` |
 | `multiHarness` config block | ! absent — defaults apply |

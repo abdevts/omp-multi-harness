@@ -11,7 +11,8 @@ export type AgentErrorCode =
 	| "SESSION_RESUME_FAILED"
 	| "WORKSPACE_BUSY"
 	| "AGENT_DISABLED"
-	| "INVALID_CWD";
+	| "INVALID_CWD"
+	| "PROVIDER_LIMIT";
 
 export interface AgentErrorInit {
 	code: AgentErrorCode;
@@ -115,6 +116,22 @@ export function invalidOutput(agent: AgentName, detail: string): AgentError {
 		code: "INVALID_OUTPUT",
 		agent,
 		message: `Could not read a final answer from ${DISPLAY[agent]}: ${detail}`,
+	});
+}
+
+/**
+ * The provider refused on quota/credits/billing. Distinct from PROCESS_FAILED because
+ * retrying cannot help — observed on codex-cli 0.155.0 as
+ * "Your workspace is out of credits."
+ */
+export function providerLimit(agent: AgentName, detail: string): AgentError {
+	return new AgentError({
+		code: "PROVIDER_LIMIT",
+		agent,
+		message:
+			`${DISPLAY[agent]} refused the request: ${detail} ` +
+			`This is a provider account limit, not a problem with the task — retrying will not help. ` +
+			`Top up or switch accounts in ${agent === "codex" ? "your OpenAI/ChatGPT" : "your Anthropic"} plan, then retry.`,
 	});
 }
 

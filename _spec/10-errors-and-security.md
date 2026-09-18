@@ -42,6 +42,18 @@ WORKSPACE_BUSY (codex)
   Wait for it, run this read-only, or cancel it with /sessions.
 ```
 
+```text
+PROVIDER_LIMIT (codex)
+  Codex refused the request: Your workspace is out of credits.
+  This is a provider account limit, not a problem with the task — retrying will not help.
+  Top up or switch accounts in your OpenAI/ChatGPT plan, then retry.
+```
+
+`PROVIDER_LIMIT` exists because a quota refusal is indistinguishable from a task failure at
+the exit-code level (codex-cli 0.155.0 exits 1 and emits `turn.failed`), yet the remedy is
+completely different: retrying, rephrasing, or switching agents is pointless until the
+account is topped up. Detected from the failure message, never from an account API.
+
 The extension **never** attempts authentication on the user's behalf.
 
 ### Auth detection

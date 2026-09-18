@@ -57,6 +57,30 @@ Two channels, used together:
    - coarse progress events → `onProgress` (tool starts, command execution, turn boundaries)
    - token/turn counts → `metadata`
 
+### Event shapes captured from codex-cli 0.155.0 (2026-09-18)
+
+```json
+{"type":"thread.started","thread_id":"01a0b606-9c69-7c20-98e0-9426e6cb7bd6"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Skill descriptions were shortened…"}}
+{"type":"error","message":"Your workspace is out of credits."}
+{"type":"turn.failed","error":{"message":"Your workspace is out of credits."}}
+```
+
+So: the session id is `thread_id` on `thread.started`; turns bracket the run as
+`turn.started` → `turn.completed` | `turn.failed`; work items arrive as `item.completed`
+with an `item.type` (`agent_message`, `command_execution`, `file_change`, `reasoning`,
+`error`, …).
+
+Two traps:
+
+1. **An `error` *item* is informational, not terminal** — the observed one was a truncated
+   skill-description notice on an otherwise healthy run. Only a top-level `{"type":"error"}`
+   or `turn.failed` ends the run.
+2. **stderr is noisy on success**: Codex logs unrelated warnings (e.g. skill files with bad
+   frontmatter) to stderr, so stderr must never be the failure signal. Use the events plus
+   the exit code (a failed turn exits 1).
+
 Parser rules:
 
 - Parse **line-delimited JSON**, tolerate partial trailing lines across chunks.

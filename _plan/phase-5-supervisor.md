@@ -33,10 +33,10 @@ Per-call `model` argument and `--model` flag on `/codex` / `/claude`, over
 background runs and then join them.
 
 ### T-503 — Routing guidance
-`routing/prompt.ts` supplies `promptSnippet` and `promptGuidelines` for each tool.
-Guideline bullets are appended **flat** into the system prompt's Guidelines section with no
-tool-name prefix, so every bullet must name its tool ("Use ask_codex when…"), never "this
-tool".
+**OMP has no `promptSnippet` / `promptGuidelines` on `ToolDefinition`** (verified 18.2.6 —
+those are upstream pi fields). Guidance therefore lives in each tool's `description`, which
+is already written that way. If more is needed, use OMP's system-prompt-customization
+surface — do not invent tool fields.
 
 Guidance content (preferences, not rules):
 

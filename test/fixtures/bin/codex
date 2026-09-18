@@ -1,17 +1,77 @@
 #!/bin/sh
-# Fake Codex CLI. Mirrors the real one's quirks — notably that `login status`
-# writes to STDERR, not stdout.
+# Fake Codex CLI. Reproduces the real CLI's quirks and event shapes
+# (captured from codex-cli 0.155.0):
+#   - `login status` writes to STDERR
+#   - `exec --json` emits thread.started / turn.started / item.completed / turn.completed
+#   - `-o <file>` receives the final message
+# Behaviour is driven by FAKE_MODE: success (default) | quota | auth | malformed | empty | hang
 case "$1" in
-  --version) echo "codex-cli 9.9.9" ;;
+  --version) echo "codex-cli 9.9.9"; exit 0 ;;
   login)
     if [ "$2" = "status" ]; then
-      if [ -n "$FAKE_LOGGED_OUT" ]; then
-        echo "Not logged in" >&2
-        exit 1
-      fi
+      if [ -n "$FAKE_LOGGED_OUT" ]; then echo "Not logged in" >&2; exit 1; fi
       echo "Logged in using ChatGPT" >&2
       exit 0
     fi
+    exit 0
     ;;
-  *) echo "fake codex: $*" ;;
+esac
+
+if [ "$1" != "exec" ]; then echo "fake codex: $*"; exit 0; fi
+
+# Collect the args we care about.
+OUT_FILE=""
+RESUMED=""
+shift
+[ "$1" = "resume" ] && { RESUMED="$2"; }
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) OUT_FILE="$2"; shift ;;
+  esac
+  shift
+done
+
+PROMPT="$(cat)"
+THREAD="${RESUMED:-01a0b606-9c69-7c20-98e0-9426e6cb7bd6}"
+
+case "${FAKE_MODE:-success}" in
+  hang)
+    echo "{\"type\":\"thread.started\",\"thread_id\":\"$THREAD\"}"
+    while true; do sleep 0.2; done
+    ;;
+  quota)
+    echo "{\"type\":\"thread.started\",\"thread_id\":\"$THREAD\"}"
+    echo '{"type":"turn.started"}'
+    echo '{"type":"error","message":"Your workspace is out of credits. Ask your workspace owner to refill in order to continue."}'
+    echo '{"type":"turn.failed","error":{"message":"Your workspace is out of credits. Ask your workspace owner to refill in order to continue."}}'
+    exit 1
+    ;;
+  auth)
+    echo "{\"type\":\"thread.started\",\"thread_id\":\"$THREAD\"}"
+    echo '{"type":"turn.failed","error":{"message":"Not logged in. Please run codex login"}}'
+    exit 1
+    ;;
+  malformed)
+    echo "{\"type\":\"thread.started\",\"thread_id\":\"$THREAD\"}"
+    echo 'this is not json at all'
+    printf '{"type":"item.completed","item":{"id":"item_0","type":"agent'
+    echo '_message","text":"recovered answer"}}'
+    echo '{"type":"turn.completed"}'
+    [ -n "$OUT_FILE" ] && printf '' > "$OUT_FILE"
+    exit 0
+    ;;
+  empty)
+    echo "{\"type\":\"thread.started\",\"thread_id\":\"$THREAD\"}"
+    echo '{"type":"turn.completed"}'
+    exit 0
+    ;;
+  *)
+    echo "{\"type\":\"thread.started\",\"thread_id\":\"$THREAD\"}"
+    echo '{"type":"turn.started"}'
+    echo '{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"ls -la"}}'
+    echo '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"done"}}'
+    echo '{"type":"turn.completed"}'
+    if [ -n "$OUT_FILE" ]; then printf 'Final answer for: %s' "$PROMPT" > "$OUT_FILE"; fi
+    exit 0
+    ;;
 esac

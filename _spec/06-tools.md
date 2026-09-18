@@ -16,7 +16,8 @@ context.
 changed: 3 files · tools: 24 · read-only: no
 ```
 
-`details` (not shown to the model as text) carries `{ runId, agent, sessionId, exitCode,
+`isError: true` marks a failed delegation, so the supervisor sees a tool error rather than
+an exception. `details` (not shown to the model as text) carries `{ runId, agent, sessionId, exitCode,
 durationMs, readOnlyEnforced, truncated, model?, routedBy? }` so state survives session reconstruction
 (OMP state-management pattern: state lives in tool-result `details`).
 
@@ -44,10 +45,16 @@ Identical schemas; the agent is fixed by the tool.
   `agent_runs`, and the user can watch it in `/sessions`. This is what makes parallel
   delegation possible (see 08).
 
-`promptSnippet` / `promptGuidelines` are set so the tools appear in the system prompt with
-routing guidance (see 08 in the brief / `src/routing/prompt.ts`). Guideline bullets are
-appended flat with no tool-name prefix, so **each bullet must name its tool explicitly**
-("Use ask_codex when…", never "Use this tool when…").
+**Correction (verified against OMP 18.2.6):** OMP's `ToolDefinition` has **no**
+`promptSnippet` / `promptGuidelines` fields — those belong to upstream `pi`, whose docs the
+first draft of this spec drew on. Routing guidance therefore rides in the tool
+`description`, which every provider serializer sends, and each description states its own
+scope explicitly ("Best for … State the task as a self-contained instruction …"). If
+system-prompt guidance beyond the description proves necessary, use OMP's
+system-prompt-customization surface (T-503), not tool fields that do not exist.
+
+OMP's `ToolDefinition` fields that do matter here: `approval` (`"read" | "write" | "exec"`;
+these tools are `"exec"`), `loadMode`, and `defaultInactive`.
 
 ## `delegate`
 
