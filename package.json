@@ -1,0 +1,24 @@
+{
+  "name": "omp-multi-harness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OMP extension that delegates work to the Codex and Claude Code CLIs",
+  "license": "MIT",
+  "main": "src/index.ts",
+  "omp": {
+    "extensions": ["src/index.ts"]
+  },
+  "scripts": {
+    "setup": "bun scripts/setup.ts",
+    "doctor": "bun scripts/setup.ts check",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "dev": "omp --no-extensions -e ./src/index.ts"
+  },
+  "devDependencies": {
+    "@oh-my-pi/pi-coding-agent": "^18.2.6",
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
+  }
+}

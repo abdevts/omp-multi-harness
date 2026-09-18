@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "bun",
+      "request": "launch",
+      "name": "Setup doctor (check)",
+      "program": "scripts/setup.ts",
+      "args": ["check"],
+      "cwd": "${workspaceFolder}",
+      "stopOnEntry": false
+    },
+    {
+      "type": "bun",
+      "request": "launch",
+      "name": "Bun: run tests",
+      "runtime": "bun",
+      "runtimeArgs": ["test"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "OMP with this extension (terminal)",
+      "runtimeExecutable": "omp",
+      "runtimeArgs": ["--no-extensions", "-e", "./src/index.ts"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    }
+  ]
+}

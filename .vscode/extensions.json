@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "oven.bun-vscode",
+    "esbenp.prettier-vscode",
+    "editorconfig.editorconfig",
+    "redhat.vscode-yaml"
+  ]
+}
